@@ -255,7 +255,7 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
 
 // Function to output JSON for predictions and transcriptions
 void generate_transcription_json(bool is_prediction, int iter, struct whisper_context* ctx,
-                               Logger& logger, bool print_tokens, const int64_t start_time_ms = 0) {
+                               Logger& logger, bool print_tokens, const int64_t absolute_time_ms = 0) {
                                    // Forward declaration for parameters JSON output
                                    void output_params_json(const whisper_params& params, Logger& logger);
     // Create segments array
@@ -339,7 +339,7 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
     json j = {
         {"type", is_prediction ? "prediction" : "transcription"},
         {"iter", iter},
-        {"start_ms", start_time_ms},
+        {"absolute_time_ms", absolute_time_ms},
         {"segments", segments},
         {"text", full_text}
     };
@@ -473,11 +473,8 @@ bool process_audio(whisper_context* ctx, const whisper_params& params,
 
     // Output results
     if (logger.is_json_mode()) {
-        // Calculate elapsed time in milliseconds since beginning of audio capture
-        const int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() -
-            std::chrono::high_resolution_clock::time_point(std::chrono::milliseconds(t_start_ms))
-        ).count();
+        // Use elapsed time based on iteration number for more logical timing
+        const int64_t elapsed_ms = t_start_ms;
 
         generate_transcription_json(is_prediction, n_iter, ctx, logger, params.print_tokens, elapsed_ms);
     } else {
@@ -663,6 +660,7 @@ int main(int argc, char** argv) {
     bool is_running = true;
     auto t_last = std::chrono::high_resolution_clock::now();
     const auto t_start = t_last;
+    int64_t absolute_time_ms = 0;
 
     while (is_running) {
         // Save audio if requested
@@ -741,11 +739,20 @@ int main(int argc, char** argv) {
 
         // Process the audio and generate transcript
         const bool is_prediction = !use_vad && (n_iter % n_new_line) != 0;
-        const int64_t t_start_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            t_last - t_start).count();
+
+        // For VAD mode, we use the actual time difference; for fixed step we use the calculated time
+        if (use_vad) {
+            absolute_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                t_last - t_start).count();
+        } else {
+            // For fixed step mode, increment based on the step size
+            if (n_iter > 0) {
+                absolute_time_ms += params.step_ms;
+            }
+        }
 
         if (!process_audio(ctx, params, pcmf32, logger, n_iter, use_vad,
-                          is_prediction, t_start_ms, prompt_tokens)) {
+                          is_prediction, absolute_time_ms, prompt_tokens)) {
             break;
         }
 
