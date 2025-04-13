@@ -31,7 +31,8 @@ json create_params_json(const whisper_params& params) {
         {"replay_file", params.replay_file},
         {"language", params.language},
         {"model", params.model},
-        {"fname_out", params.fname_out}
+        {"fname_out", params.fname_out},
+        {"get_audio_devices", params.get_audio_devices}
     };
 }
 
@@ -92,6 +93,7 @@ bool whisper_params_parse(int argc, char** argv, whisper_params& params) {
             params.replay      = true;
             params.replay_file = argv[++i];
         }
+        else if (arg == "-gad"  || arg == "--get-audio-devices") { params.get_audio_devices = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             whisper_print_usage(argc, argv, params);
@@ -132,6 +134,7 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
     fprintf(stderr, "  -j,       --json          [%-7s] output in JSON format\n",                          params.json_output ? "true" : "false");
     fprintf(stderr, "  -pt,      --print-tokens  [%-7s] include tokens in output\n",                       params.print_tokens ? "true" : "false");
     fprintf(stderr, "  -r FILE,  --replay FILE   [%-7s] replay transcriptions from JSONL file\n",          params.replay ? params.replay_file.c_str() : "false");
+    fprintf(stderr, "  -gad,     --get-audio-devices [%-7s] just list audio devices and exit\n",           params.get_audio_devices ? "true" : "false");
     fprintf(stderr, "\n");
 }
 

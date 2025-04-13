@@ -44,6 +44,7 @@ struct whisper_params {
     bool json_output   = false; // output in JSON format
     bool print_tokens  = false; // include tokens in output
     bool replay        = false; // replay mode (read from JSONL file)
+    bool get_audio_devices = false; // just list audio devices and exit
     std::string replay_file;  // path to JSONL file for replay
 
     std::string language  = "en";

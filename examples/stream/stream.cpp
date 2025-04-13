@@ -85,6 +85,13 @@ int main(int argc, char** argv) {
 
     // Output system information (including params)
     output_system_info(ctx, logger, params);
+    
+    // If get-audio-devices flag is set, exit after listing devices
+    if (params.get_audio_devices) {
+        logger.log("Audio devices listed successfully");
+        whisper_free(ctx);
+        return 0;
+    }
 
     // Check model compatibility
     if (!whisper_is_multilingual(ctx)) {
