@@ -1,17 +1,10 @@
 #include "stream_replay.h"
+#include "stream_logger.h"
 #include <fstream>
 #include <chrono>
 #include <thread>
 #include <iostream>
 #include <vector>
-#include <nlohmann/json.hpp>
-
-// Forward reference to Logger class
-// This will be defined in stream_logger.h
-class Logger;
-
-// Using alias for json library
-using json = nlohmann::json;
 
 bool replay_transcriptions(const std::string& replay_file, Logger& logger) {
     std::ifstream file(replay_file);
