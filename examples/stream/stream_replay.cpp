@@ -3,7 +3,6 @@
 #include <fstream>
 #include <chrono>
 #include <thread>
-#include <iostream>
 #include <vector>
 
 bool replay_transcriptions(const std::string& replay_file, Logger& logger) {

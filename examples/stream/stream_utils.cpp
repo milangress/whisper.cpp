@@ -1,5 +1,7 @@
 #include "stream_utils.h"
+#include "common-whisper.h"
 #include "stream_logger.h"
+#include "stream_common.h"
 
 // Function to convert whisper_params to JSON
 json create_params_json(const whisper_params& params) {

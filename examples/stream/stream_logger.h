@@ -2,7 +2,6 @@
 
 #include "stream_common.h"
 #include <fstream>
-#include <iostream>
 
 /**
  * Logger class to handle different output formats (text or JSON)
@@ -18,7 +17,7 @@ public:
      * @param params The whisper parameters with output settings
      */
     Logger(const whisper_params& params);
-    
+
     /**
      * Destructor - closes any open file handles
      */

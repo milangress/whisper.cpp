@@ -2,8 +2,7 @@
 
 #include "stream_common.h"
 #include "common-sdl.h"
-#include "common.h"
-#include "common-whisper.h"
+#include "whisper.h"
 
 /**
  * Get token probabilities for a segment

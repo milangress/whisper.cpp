@@ -1,12 +1,9 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <cstdint>
 #include <thread>
-#include <functional>
 #include <nlohmann/json.hpp>
-#include "whisper.h"
 
 // Create alias for json library
 using json = nlohmann::json;

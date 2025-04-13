@@ -1,4 +1,5 @@
 #include "stream_logger.h"
+#include <iostream>
 
 Logger::Logger(const whisper_params& params) :
     json_mode(params.json_output) {
