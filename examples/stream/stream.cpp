@@ -519,6 +519,7 @@ int main(int argc, char ** argv) {
                 }
                 
 
+
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
@@ -607,11 +608,10 @@ int main(int argc, char ** argv) {
                 // Calculate start time in milliseconds since beginning of audio capture
                 const int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::high_resolution_clock::now() - t_start).count();
-                const int64_t start_ms = elapsed_ms - pcmf32.size() * 1000.0 / WHISPER_SAMPLE_RATE;
                 
-                transcription_json(is_prediction, n_iter, ctx, std::cout, start_ms);
+                transcription_json(is_prediction, n_iter, ctx, std::cout, elapsed_ms);
                 if (fout.is_open()) {
-                    transcription_json(is_prediction, n_iter, ctx, fout, start_ms);
+                    transcription_json(is_prediction, n_iter, ctx, fout, elapsed_ms);
                 }
             } else {
                 if (!use_vad) {
