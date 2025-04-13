@@ -27,10 +27,13 @@ struct token_prob {
     std::string text;
     float p;
 };
-
 // Forward declarations
 class Logger;
+struct whisper_params;
+
+// Function declarations
 void output_system_info(whisper_context* ctx, Logger& logger, const whisper_params& params);
+json create_params_json(const whisper_params& params);
 
 
 // command-line parameters
@@ -63,6 +66,35 @@ struct whisper_params {
     std::string model     = "models/ggml-base.en.bin";
     std::string fname_out;
 };
+// Function to convert whisper_params to JSON
+json create_params_json(const whisper_params& params) {
+    return {
+        {"n_threads", params.n_threads},
+        {"step_ms", params.step_ms},
+        {"length_ms", params.length_ms},
+        {"keep_ms", params.keep_ms},
+        {"capture_id", params.capture_id},
+        {"max_tokens", params.max_tokens},
+        {"audio_ctx", params.audio_ctx},
+        {"beam_size", params.beam_size},
+        {"vad_thold", params.vad_thold},
+        {"freq_thold", params.freq_thold},
+        {"translate", params.translate},
+        {"no_fallback", params.no_fallback},
+        {"print_special", params.print_special},
+        {"no_context", params.no_context},
+        {"no_timestamps", params.no_timestamps},
+        {"tinydiarize", params.tinydiarize},
+        {"save_audio", params.save_audio},
+        {"use_gpu", params.use_gpu},
+        {"flash_attn", params.flash_attn},
+        {"json_output", params.json_output},
+        {"print_tokens", params.print_tokens},
+        {"language", params.language},
+        {"model", params.model},
+        {"fname_out", params.fname_out}
+    };
+}
 
 // Logger class to handle different output formats
 class Logger {
