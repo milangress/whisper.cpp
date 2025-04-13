@@ -30,6 +30,7 @@ struct token_prob {
 
 // Forward declarations
 class Logger;
+void output_system_info(whisper_context* ctx, Logger& logger, const whisper_params& params);
 
 
 // command-line parameters
@@ -253,11 +254,12 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
     fprintf(stderr, "\n");
 }
 
+// Forward declaration for parameters JSON output
+void output_params_json(const whisper_params& params, Logger& logger);
+
 // Function to output JSON for predictions and transcriptions
 void generate_transcription_json(bool is_prediction, int iter, struct whisper_context* ctx,
-                               Logger& logger, bool print_tokens, const int64_t absolute_time_ms = 0) {
-                                   // Forward declaration for parameters JSON output
-                                   void output_params_json(const whisper_params& params, Logger& logger);
+                               Logger& logger, bool print_tokens, const int64_t iter_start_ms = 0) {
     // Create segments array
     json segments = json::array();
     const int n_segments = whisper_full_n_segments(ctx);
@@ -272,12 +274,12 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
         full_text += text;
 
-        // Create a segment object
+        // Create a segment object with timestamps relative to iteration start
         json segment = {
             {"id", i},
             {"text", text},
-            {"start_ms", t0 * 10},
-            {"end_ms", t1 * 10},
+            {"start_ms", iter_start_ms + (t0 * 10)},
+            {"end_ms", iter_start_ms + (t1 * 10)},
             {"speaker_turn", speaker_turn}
         };
 
@@ -339,7 +341,7 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
     json j = {
         {"type", is_prediction ? "prediction" : "transcription"},
         {"iter", iter},
-        {"absolute_time_ms", absolute_time_ms},
+        {"iter_start_ms", iter_start_ms},
         {"segments", segments},
         {"text", full_text}
     };
@@ -349,7 +351,7 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 }
 
 // Generate output for devices and model
-void output_system_info(whisper_context* ctx, Logger& logger) {
+void output_system_info(whisper_context* ctx, Logger& logger, const whisper_params& params) {
     if (!logger.is_json_mode()) return;
 
     // List audio devices
@@ -380,11 +382,12 @@ void output_system_info(whisper_context* ctx, Logger& logger) {
         {"text_ctx", ctx ? whisper_model_n_text_ctx(ctx) : 0}
     };
 
-    // Create the main initialization JSON object
+    // Create the main initialization JSON object (including params)
     json j = {
         {"type", "init"},
         {"devices", devices},
-        {"model", model_info}
+        {"model", model_info},
+        {"params", create_params_json(params)}
     };
 
     // Output to logger
@@ -530,34 +533,13 @@ void handle_overflow(Logger& logger, audio_async& audio) {
     audio.clear();
 }
 
-// Output parameters as JSON
+
+
+// Output parameters as standalone JSON (for backward compatibility)
 void output_params_json(const whisper_params& params, Logger& logger) {
     json j = {
         {"type", "params"},
-        {"n_threads", params.n_threads},
-        {"step_ms", params.step_ms},
-        {"length_ms", params.length_ms},
-        {"keep_ms", params.keep_ms},
-        {"capture_id", params.capture_id},
-        {"max_tokens", params.max_tokens},
-        {"audio_ctx", params.audio_ctx},
-        {"beam_size", params.beam_size},
-        {"vad_thold", params.vad_thold},
-        {"freq_thold", params.freq_thold},
-        {"translate", params.translate},
-        {"no_fallback", params.no_fallback},
-        {"print_special", params.print_special},
-        {"no_context", params.no_context},
-        {"no_timestamps", params.no_timestamps},
-        {"tinydiarize", params.tinydiarize},
-        {"save_audio", params.save_audio},
-        {"use_gpu", params.use_gpu},
-        {"flash_attn", params.flash_attn},
-        {"json_output", params.json_output},
-        {"print_tokens", params.print_tokens},
-        {"language", params.language},
-        {"model", params.model},
-        {"fname_out", params.fname_out}
+        {"params", create_params_json(params)}
     };
 
     logger.log_json(j);
@@ -571,15 +553,6 @@ int main(int argc, char** argv) {
 
     // Initialize the logger
     Logger logger(params);
-
-    // Output parameters as JSON if in JSON mode
-    if (params.json_output) {
-        output_params_json(params, logger);
-    }
-
-    // Adjust parameters
-    params.keep_ms   = std::min(params.keep_ms, params.step_ms);
-    params.length_ms = std::max(params.length_ms, params.step_ms);
 
     const int n_samples_step = (1e-3*params.step_ms  )*WHISPER_SAMPLE_RATE;
     const int n_samples_len  = (1e-3*params.length_ms)*WHISPER_SAMPLE_RATE;
@@ -619,8 +592,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Output system information
-    output_system_info(ctx, logger);
+    // Output system information (including params)
+    output_system_info(ctx, logger, params);
 
     // Check model compatibility
     if (!whisper_is_multilingual(ctx)) {
@@ -660,7 +633,7 @@ int main(int argc, char** argv) {
     bool is_running = true;
     auto t_last = std::chrono::high_resolution_clock::now();
     const auto t_start = t_last;
-    int64_t absolute_time_ms = 0;
+    int64_t iter_start_ms = 0;
 
     while (is_running) {
         // Save audio if requested
@@ -740,19 +713,12 @@ int main(int argc, char** argv) {
         // Process the audio and generate transcript
         const bool is_prediction = !use_vad && (n_iter % n_new_line) != 0;
 
-        // For VAD mode, we use the actual time difference; for fixed step we use the calculated time
-        if (use_vad) {
-            absolute_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                t_last - t_start).count();
-        } else {
-            // For fixed step mode, increment based on the step size
-            if (n_iter > 0) {
-                absolute_time_ms += params.step_ms;
-            }
-        }
+        // Always use the actual time difference from start
+        iter_start_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t_start).count();
 
         if (!process_audio(ctx, params, pcmf32, logger, n_iter, use_vad,
-                          is_prediction, absolute_time_ms, prompt_tokens)) {
+                          is_prediction, iter_start_ms, prompt_tokens)) {
             break;
         }
 
