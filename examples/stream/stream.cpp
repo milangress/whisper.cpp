@@ -17,6 +17,10 @@
 #include <sstream>
 #include <iostream>
 #include <iomanip>
+#include <nlohmann/json.hpp>
+
+// Create alias for json library
+using json = nlohmann::json;
 
 // command-line parameters
 struct whisper_params {
@@ -50,91 +54,67 @@ struct whisper_params {
 
 void whisper_print_usage(int argc, char ** argv, const whisper_params & params);
 
-// Function to escape JSON strings
+// Function to escape JSON strings (using nlohmann/json)
 std::string json_escape(const std::string& s) {
-    std::ostringstream o;
-    for (auto c = s.cbegin(); c != s.cend(); c++) {
-        switch (*c) {
-            case '"': o << "\\\""; break;
-            case '\\': o << "\\\\"; break;
-            case '\b': o << "\\b"; break;
-            case '\f': o << "\\f"; break;
-            case '\n': o << "\\n"; break;
-            case '\r': o << "\\r"; break;
-            case '\t': o << "\\t"; break;
-            default:
-                if ('\x00' <= *c && *c <= '\x1f') {
-                    o << "\\u"
-                      << std::hex << std::setw(4) << std::setfill('0') << (int)*c;
-                } else {
-                    o << *c;
-                }
-        }
-    }
-    return o.str();
+    json j = s;
+    return j.dump();
 }
 
 // Function to output JSON messages for stdout
 void json_stdout(const std::string& text, std::ostream& out) {
-    std::stringstream json;
-    json << "{" << std::endl;
-    json << "  \"type\": \"stdout\"," << std::endl;
-    json << "  \"text\": \"" << json_escape(text) << "\"" << std::endl;
-    json << "}" << std::endl;
+    json j = {
+        {"type", "stdout"},
+        {"text", text}
+    };
 
-    out << json.str() << std::flush;
+    out << j.dump(2) << std::endl << std::flush;
 }
 
 // Function to output JSON messages for stderr
 void json_stderr(const std::string& text, std::ostream& out) {
-    std::stringstream json;
-    json << "{" << std::endl;
-    json << "  \"type\": \"stderr\"," << std::endl;
-    json << "  \"text\": \"" << json_escape(text) << "\"" << std::endl;
-    json << "}" << std::endl;
+    json j = {
+        {"type", "stderr"},
+        {"text", text}
+    };
 
-    out << json.str() << std::flush;
+    out << j.dump(2) << std::endl << std::flush;
 }
 
 // Function to output JSON for predictions and transcriptions
 void output_json(bool is_prediction, int iter, struct whisper_context* ctx, std::ostream& out) {
-    std::stringstream json;
-
-    json << "{" << std::endl;
-    json << "  \"type\": \"" << (is_prediction ? "prediction" : "transcription") << "\"," << std::endl;
-    json << "  \"iter\": " << iter << "," << std::endl;
-
-    // Add segments
-    json << "  \"segments\": [" << std::endl;
+    // Create segments array
+    json segments = json::array();
     const int n_segments = whisper_full_n_segments(ctx);
+
+    std::string full_text;
+
     for (int i = 0; i < n_segments; ++i) {
         const char* text = whisper_full_get_segment_text(ctx, i);
         const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
         const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
         const bool speaker_turn = whisper_full_get_segment_speaker_turn_next(ctx, i);
 
-        json << "    {" << std::endl;
-        json << "      \"id\": " << i << "," << std::endl;
-        json << "      \"text\": \"" << json_escape(text) << "\"," << std::endl;
-        json << "      \"start_ms\": " << t0 * 10 << "," << std::endl;
-        json << "      \"end_ms\": " << t1 * 10 << "," << std::endl;
-        json << "      \"speaker_turn\": " << (speaker_turn ? "true" : "false") << std::endl;
-        json << "    }" << (i < n_segments - 1 ? "," : "") << std::endl;
+        full_text += text;
+
+        segments.push_back({
+            {"id", i},
+            {"text", text},
+            {"start_ms", t0 * 10},
+            {"end_ms", t1 * 10},
+            {"speaker_turn", speaker_turn}
+        });
     }
-    json << "  ]," << std::endl;
 
-    // Full text (concatenated segments)
-    json << "  \"text\": \"";
-    std::string full_text;
-    for (int i = 0; i < n_segments; ++i) {
-        full_text += whisper_full_get_segment_text(ctx, i);
-    }
-    json << json_escape(full_text) << "\"" << std::endl;
+    // Create the main JSON object
+    json j = {
+        {"type", is_prediction ? "prediction" : "transcription"},
+        {"iter", iter},
+        {"segments", segments},
+        {"text", full_text}
+    };
 
-    json << "}" << std::endl;
-
-    // Output to the provided stream
-    out << json.str() << std::flush;
+    // Output to the provided stream with pretty formatting
+    out << j.dump(2) << std::endl << std::flush;
 }
 
 static bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
@@ -283,12 +263,8 @@ int main(int argc, char ** argv) {
 
     // Output JSON initialization info
     if (params.json_output) {
-        std::stringstream json;
-        json << "{" << std::endl;
-        json << "  \"type\": \"init\"," << std::endl;
-        json << "  \"devices\": [" << std::endl;
-
-        // List audio devices (use the device count from SDL initialization)
+        // List audio devices
+        json devices = json::array();
         int device_count = 0;
         {
             // Count devices from the init output message (this is a workaround since we can't access device info directly)
@@ -296,27 +272,33 @@ int main(int argc, char ** argv) {
         }
 
         for (int i = 0; i < device_count; ++i) {
-            json << "    {" << std::endl;
-            json << "      \"id\": " << i << "," << std::endl;
-            json << "      \"name\": \"Device " << i << "\"" << std::endl;
-            json << "    }" << (i < device_count - 1 ? "," : "") << std::endl;
+            devices.push_back({
+                {"id", i},
+                {"name", "Device " + std::to_string(i)}
+            });
         }
-        json << "  ]," << std::endl;
 
-        // Model info
-        json << "  \"model\": {" << std::endl;
-        json << "    \"name\": \"" << json_escape(params.model) << "\"," << std::endl;
-        json << "    \"type\": \"" << whisper_model_type_readable(ctx) << "\"," << std::endl;
-        json << "    \"multilingual\": " << (whisper_is_multilingual(ctx) ? "true" : "false") << "," << std::endl;
-        json << "    \"vocab_size\": " << whisper_model_n_vocab(ctx) << "," << std::endl;
-        json << "    \"audio_ctx\": " << whisper_model_n_audio_ctx(ctx) << "," << std::endl;
-        json << "    \"text_ctx\": " << whisper_model_n_text_ctx(ctx) << std::endl;
-        json << "  }" << std::endl;
-        json << "}" << std::endl;
+        // Create model info object
+        json model_info = {
+            {"name", params.model},
+            {"type", whisper_model_type_readable(ctx)},
+            {"multilingual", whisper_is_multilingual(ctx)},
+            {"vocab_size", whisper_model_n_vocab(ctx)},
+            {"audio_ctx", whisper_model_n_audio_ctx(ctx)},
+            {"text_ctx", whisper_model_n_text_ctx(ctx)}
+        };
 
-        std::cout << json.str() << std::flush;
+        // Create the main initialization JSON object
+        json j = {
+            {"type", "init"},
+            {"devices", devices},
+            {"model", model_info}
+        };
+
+        // Output to stdout with pretty formatting
+        std::cout << j.dump(2) << std::endl << std::flush;
         if (fout.is_open()) {
-            fout << json.str() << std::flush;
+            fout << j.dump(2) << std::endl << std::flush;
         }
     }
 
@@ -628,34 +610,29 @@ int main(int argc, char ** argv) {
     audio.pause();
 
     if (params.json_output) {
-        // Output timing statistics as JSON
-        std::stringstream json;
-        json << "{" << std::endl;
-        json << "  \"type\": \"timings\"," << std::endl;
-
-        // Get whisper timing information - we can't use whisper_get_timings directly
-        // Instead, we'll hardcode some example values for this demonstration
-        // In production, you would need to capture the printed timings or use an API that exposes them
-
         // First, call the original function to print timings to stderr
         whisper_print_timings(ctx);
 
-        // Then, provide example JSON output based on typical values
-        json << "  \"load_time_ms\": 139.98," << std::endl;
-        json << "  \"fallbacks\": 0," << std::endl;
-        json << "  \"mel_time_ms\": 57.77," << std::endl;
-        json << "  \"sample_time_ms\": 81.83," << std::endl;
-        json << "  \"sample_runs\": 1," << std::endl;
-        json << "  \"encode_time_ms\": 1840.53," << std::endl;
-        json << "  \"encode_runs\": 24," << std::endl;
-        json << "  \"decode_time_ms\": 494.70," << std::endl;
-        json << "  \"decode_runs\": 186," << std::endl;
-        json << "  \"total_time_ms\": 12040.44" << std::endl;
-        json << "}" << std::endl;
+        // Create timing information JSON object with example values
+        // In production, you would need to capture the printed timings or use an API that exposes them
+        json j = {
+            {"type", "timings"},
+            {"load_time_ms", 139.98},
+            {"fallbacks", 0},
+            {"mel_time_ms", 57.77},
+            {"sample_time_ms", 81.83},
+            {"sample_runs", 1},
+            {"encode_time_ms", 1840.53},
+            {"encode_runs", 24},
+            {"decode_time_ms", 494.70},
+            {"decode_runs", 186},
+            {"total_time_ms", 12040.44}
+        };
 
-        std::cout << json.str() << std::flush;
+        // Output to stdout with pretty formatting
+        std::cout << j.dump(2) << std::endl << std::flush;
         if (fout.is_open()) {
-            fout << json.str() << std::flush;
+            fout << j.dump(2) << std::endl << std::flush;
         }
     } else {
         whisper_print_timings(ctx);
