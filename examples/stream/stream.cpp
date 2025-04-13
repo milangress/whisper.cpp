@@ -29,20 +29,20 @@ struct token_prob {
 std::vector<token_prob> get_token_probs(struct whisper_context* ctx, int segment_idx) {
     std::vector<token_prob> result;
     const int n_tokens = whisper_full_n_tokens(ctx, segment_idx);
-    
+
     for (int i = 0; i < n_tokens; ++i) {
         const char* text = whisper_full_get_token_text(ctx, segment_idx, i);
         const float p = whisper_full_get_token_p(ctx, segment_idx, i);
-        
+
         // Skip special tokens
         const whisper_token id = whisper_full_get_token_id(ctx, segment_idx, i);
         if (id >= whisper_token_eot(ctx)) {
             continue;
         }
-        
+
         result.push_back({std::string(text), p});
     }
-    
+
     return result;
 }
 
@@ -132,37 +132,37 @@ void transcription_json(bool is_prediction, int iter, struct whisper_context* ct
         // Add token-level information if available
         json tokens = json::array();
         const int n_tokens = whisper_full_n_tokens(ctx, i);
-        
+
         float avg_confidence = 0.0f;
         for (int j = 0; j < n_tokens; ++j) {
             const char* token_text = whisper_full_get_token_text(ctx, i, j);
             const float token_p = whisper_full_get_token_p(ctx, i, j);
             const whisper_token token_id = whisper_full_get_token_id(ctx, i, j);
-            
+
             // Skip special tokens if we don't want to include them
             if (token_id >= whisper_token_eot(ctx)) {
                 continue;
             }
-            
+
             tokens.push_back({
                 {"text", token_text},
                 {"p", token_p}
             });
-            
+
             avg_confidence += token_p;
         }
-        
+
         // Add average confidence if we have tokens
         if (n_tokens > 0) {
             avg_confidence /= n_tokens;
             segment["confidence"] = avg_confidence;
         }
-        
+
         // Add tokens array to segment if we have any
         if (!tokens.empty()) {
             segment["tokens"] = tokens;
         }
-        
+
         segments.push_back(segment);
     }
 
@@ -327,18 +327,21 @@ int main(int argc, char ** argv) {
     if (params.json_output) {
         // List audio devices
         json devices = json::array();
-        int device_count = 0;
-        {
-            // Count devices from the init output message (this is a workaround since we can't access device info directly)
-            device_count = 7; // Hardcoded for this example based on init message, in production would need a better solution
-        }
+        int device_count = SDL_GetNumAudioDevices(SDL_TRUE); // Get capture (input) devices
 
         for (int i = 0; i < device_count; ++i) {
+            const char* device_name = SDL_GetAudioDeviceName(i, SDL_TRUE);
             devices.push_back({
                 {"id", i},
-                {"name", "Device " + std::to_string(i)}
+                {"name", device_name ? device_name : "Unknown Device " + std::to_string(i)}
             });
         }
+
+        // Add default device
+        devices.push_back({
+            {"id", -1},
+            {"name", "Default Device"}
+        });
 
         // Create model info object
         json model_info = {
@@ -374,7 +377,7 @@ int main(int argc, char ** argv) {
                     params.translate = false;
                 }
             }
-            
+
             // Create processing metadata
             json j = {
                 {"type", "processing-meta"},
@@ -390,18 +393,18 @@ int main(int argc, char ** argv) {
                 {"timestamps", !params.no_timestamps},
                 {"vad", use_vad}
             };
-            
+
             if (!use_vad) {
                 j["n_new_line"] = n_new_line;
                 j["no_context"] = params.no_context;
             }
-            
+
             // Output as JSON
             std::cout << j.dump(2) << std::endl << std::flush;
             if (fout.is_open()) {
                 fout << j.dump(2) << std::endl << std::flush;
             }
-            
+
             // If the model is not multilingual, add a warning
             if (!whisper_is_multilingual(ctx) && (params.language != "en" || params.translate)) {
                 json warning = {
@@ -517,7 +520,7 @@ int main(int argc, char ** argv) {
                     audio.clear();
                     break;
                 }
-                
+
 
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -604,11 +607,11 @@ int main(int argc, char ** argv) {
             if (params.json_output) {
                 // Decide if this is a prediction or a transcription
                 const bool is_prediction = !use_vad && (n_iter % n_new_line) != 0;
-                
+
                 // Calculate start time in milliseconds since beginning of audio capture
                 const int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::high_resolution_clock::now() - t_start).count();
-                
+
                 transcription_json(is_prediction, n_iter, ctx, std::cout, elapsed_ms);
                 if (fout.is_open()) {
                     transcription_json(is_prediction, n_iter, ctx, fout, elapsed_ms);
@@ -701,49 +704,8 @@ int main(int argc, char ** argv) {
 
     audio.pause();
 
-    if (params.json_output) {
-        // First, call the original function to print timings to stderr for log purposes
-        whisper_print_timings(ctx);
-
-        // Get total elapsed time
-        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - t_start).count();
-
-        // Create timing information JSON object with example values
-        // In a production environment, you would need to use an API that exposes real timing values
-        json j = {
-            {"type", "timings"},
-            {"total_runtime_ms", elapsed_ms},
-            {"processing", {
-                {"load_time_ms", 139.98},
-                {"fallbacks", 0},
-                {"mel", {
-                    {"time_ms", 57.77}
-                }},
-                {"sample", {
-                    {"time_ms", 81.83},
-                    {"runs", 1}
-                }},
-                {"encode", {
-                    {"time_ms", 1840.53},
-                    {"runs", 24}
-                }},
-                {"decode", {
-                    {"time_ms", 494.70},
-                    {"runs", 186}
-                }}
-            }},
-            {"iterations", n_iter}
-        };
-
-        // Output to stdout with pretty formatting
-        std::cout << j.dump(2) << std::endl << std::flush;
-        if (fout.is_open()) {
-            fout << j.dump(2) << std::endl << std::flush;
-        }
-    } else {
-        whisper_print_timings(ctx);
-    }
+    
+    whisper_print_timings(ctx);
 
     whisper_free(ctx);
 
