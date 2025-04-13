@@ -31,6 +31,7 @@ struct token_prob {
 // Forward declarations
 class Logger;
 
+
 // command-line parameters
 struct whisper_params {
     int32_t n_threads  = std::min(4, (int32_t) std::thread::hardware_concurrency());
@@ -55,11 +56,11 @@ struct whisper_params {
     bool use_gpu       = true;
     bool flash_attn    = false;
     bool json_output   = false; // output in JSON format
+    bool print_tokens  = false; // include tokens in output
 
     std::string language  = "en";
     std::string model     = "models/ggml-base.en.bin";
     std::string fname_out;
-    std::string fname_log_jsonl; // File to save JSON lines output
 };
 
 // Logger class to handle different output formats
@@ -67,32 +68,23 @@ class Logger {
 private:
     bool json_mode;
     std::ofstream file_out;
-    std::ofstream jsonl_out;
 
 public:
     Logger(const whisper_params& params) :
         json_mode(params.json_output) {
 
-        // Open regular output file if specified
+        // Open output file if specified
         if (!params.fname_out.empty()) {
+            // In JSON mode, we write JSONL format
             file_out.open(params.fname_out);
             if (!file_out.is_open()) {
                 fprintf(stderr, "Error: Failed to open output file '%s'\n", params.fname_out.c_str());
-            }
-        }
-
-        // Open JSON lines output file if specified
-        if (!params.fname_log_jsonl.empty()) {
-            jsonl_out.open(params.fname_log_jsonl);
-            if (!jsonl_out.is_open()) {
-                fprintf(stderr, "Error: Failed to open JSON log file '%s'\n", params.fname_log_jsonl.c_str());
             }
         }
     }
 
     ~Logger() {
         if (file_out.is_open()) file_out.close();
-        if (jsonl_out.is_open()) jsonl_out.close();
     }
 
     // Log standard output (plain text or JSON based on mode)
@@ -152,13 +144,10 @@ public:
     void log_json(const json& j) {
         std::cout << j.dump(2) << std::endl << std::flush;
 
+        // Write to file if open (always as JSONL format)
         if (file_out.is_open()) {
-            file_out << j.dump(2) << std::endl;
-        }
-
-        // Also write to JSON lines file if needed (one line per object, no indentation)
-        if (jsonl_out.is_open()) {
-            jsonl_out << j.dump() << std::endl;
+            file_out << j.dump() << std::endl;
+            file_out.flush();
         }
     }
 
@@ -221,7 +210,7 @@ bool whisper_params_parse(int argc, char** argv, whisper_params& params) {
         else if (arg == "-ng"   || arg == "--no-gpu")        { params.use_gpu       = false; }
         else if (arg == "-fa"   || arg == "--flash-attn")    { params.flash_attn    = true; }
         else if (arg == "-j"    || arg == "--json")          { params.json_output   = true; }
-        else if (arg == "--file-log-jsonl")                  { params.fname_log_jsonl = argv[++i]; }
+        else if (arg == "-pt"   || arg == "--print-tokens")  { params.print_tokens  = true; }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             whisper_print_usage(argc, argv, params);
@@ -260,13 +249,15 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
     fprintf(stderr, "  -ng,      --no-gpu        [%-7s] disable GPU inference\n",                          params.use_gpu ? "false" : "true");
     fprintf(stderr, "  -fa,      --flash-attn    [%-7s] flash attention during inference\n",               params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -j,       --json          [%-7s] output in JSON format\n",                          params.json_output ? "true" : "false");
-    fprintf(stderr, "            --file-log-jsonl FNAME   save JSON output line by line to a file\n");
+    fprintf(stderr, "  -pt,      --print-tokens  [%-7s] include tokens in output\n",                       params.print_tokens ? "true" : "false");
     fprintf(stderr, "\n");
 }
 
 // Function to output JSON for predictions and transcriptions
 void generate_transcription_json(bool is_prediction, int iter, struct whisper_context* ctx,
-                               Logger& logger, const int64_t start_time_ms = 0) {
+                               Logger& logger, bool print_tokens, const int64_t start_time_ms = 0) {
+                                   // Forward declaration for parameters JSON output
+                                   void output_params_json(const whisper_params& params, Logger& logger);
     // Create segments array
     json segments = json::array();
     const int n_segments = whisper_full_n_segments(ctx);
@@ -290,38 +281,55 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
             {"speaker_turn", speaker_turn}
         };
 
-        // Add token-level information if available
-        json tokens = json::array();
-        const int n_tokens = whisper_full_n_tokens(ctx, i);
-
+        // Always calculate average confidence
         float avg_confidence = 0.0f;
-        for (int j = 0; j < n_tokens; ++j) {
-            const char* token_text = whisper_full_get_token_text(ctx, i, j);
-            const float token_p = whisper_full_get_token_p(ctx, i, j);
-            const whisper_token token_id = whisper_full_get_token_id(ctx, i, j);
+        const int n_tokens = whisper_full_n_tokens(ctx, i);
+        int valid_tokens = 0;
 
-            // Skip special tokens if we don't want to include them
-            if (token_id >= whisper_token_eot(ctx)) {
-                continue;
+        // Add token-level information if requested
+        if (print_tokens) {
+            json tokens = json::array();
+
+            for (int j = 0; j < n_tokens; ++j) {
+                const char* token_text = whisper_full_get_token_text(ctx, i, j);
+                const float token_p = whisper_full_get_token_p(ctx, i, j);
+                const whisper_token token_id = whisper_full_get_token_id(ctx, i, j);
+
+                // Skip special tokens if we don't want to include them
+                if (token_id >= whisper_token_eot(ctx)) {
+                    continue;
+                }
+
+                tokens.push_back({
+                    {"text", token_text},
+                    {"p", token_p}
+                });
+
+                avg_confidence += token_p;
+                valid_tokens++;
             }
 
-            tokens.push_back({
-                {"text", token_text},
-                {"p", token_p}
-            });
+            // Add tokens array to segment if we have any
+            if (!tokens.empty()) {
+                segment["tokens"] = tokens;
+            }
+        } else {
+            // Just calculate confidence without storing tokens
+            for (int j = 0; j < n_tokens; ++j) {
+                const whisper_token token_id = whisper_full_get_token_id(ctx, i, j);
+                if (token_id >= whisper_token_eot(ctx)) {
+                    continue;
+                }
 
-            avg_confidence += token_p;
+                avg_confidence += whisper_full_get_token_p(ctx, i, j);
+                valid_tokens++;
+            }
         }
 
         // Add average confidence if we have tokens
-        if (n_tokens > 0) {
-            avg_confidence /= n_tokens;
+        if (valid_tokens > 0) {
+            avg_confidence /= valid_tokens;
             segment["confidence"] = avg_confidence;
-        }
-
-        // Add tokens array to segment if we have any
-        if (!tokens.empty()) {
-            segment["tokens"] = tokens;
         }
 
         segments.push_back(segment);
@@ -471,7 +479,7 @@ bool process_audio(whisper_context* ctx, const whisper_params& params,
             std::chrono::high_resolution_clock::time_point(std::chrono::milliseconds(t_start_ms))
         ).count();
 
-        generate_transcription_json(is_prediction, n_iter, ctx, logger, elapsed_ms);
+        generate_transcription_json(is_prediction, n_iter, ctx, logger, params.print_tokens, elapsed_ms);
     } else {
         if (!use_vad) {
             printf("\33[2K\r");
@@ -525,6 +533,38 @@ void handle_overflow(Logger& logger, audio_async& audio) {
     audio.clear();
 }
 
+// Output parameters as JSON
+void output_params_json(const whisper_params& params, Logger& logger) {
+    json j = {
+        {"type", "params"},
+        {"n_threads", params.n_threads},
+        {"step_ms", params.step_ms},
+        {"length_ms", params.length_ms},
+        {"keep_ms", params.keep_ms},
+        {"capture_id", params.capture_id},
+        {"max_tokens", params.max_tokens},
+        {"audio_ctx", params.audio_ctx},
+        {"beam_size", params.beam_size},
+        {"vad_thold", params.vad_thold},
+        {"freq_thold", params.freq_thold},
+        {"translate", params.translate},
+        {"no_fallback", params.no_fallback},
+        {"print_special", params.print_special},
+        {"no_context", params.no_context},
+        {"no_timestamps", params.no_timestamps},
+        {"tinydiarize", params.tinydiarize},
+        {"save_audio", params.save_audio},
+        {"use_gpu", params.use_gpu},
+        {"flash_attn", params.flash_attn},
+        {"json_output", params.json_output},
+        {"print_tokens", params.print_tokens},
+        {"language", params.language},
+        {"model", params.model},
+        {"fname_out", params.fname_out}
+    };
+
+    logger.log_json(j);
+}
 int main(int argc, char** argv) {
     whisper_params params;
 
@@ -534,6 +574,11 @@ int main(int argc, char** argv) {
 
     // Initialize the logger
     Logger logger(params);
+
+    // Output parameters as JSON if in JSON mode
+    if (params.json_output) {
+        output_params_json(params, logger);
+    }
 
     // Adjust parameters
     params.keep_ms   = std::min(params.keep_ms, params.step_ms);
