@@ -61,6 +61,8 @@ struct whisper_params {
     bool flash_attn    = false;
     bool json_output   = false; // output in JSON format
     bool print_tokens  = false; // include tokens in output
+    bool replay        = false; // replay mode (read from JSONL file)
+    std::string replay_file;  // path to JSONL file for replay
 
     std::string language  = "en";
     std::string model     = "models/ggml-base.en.bin";
@@ -90,6 +92,8 @@ json create_params_json(const whisper_params& params) {
         {"flash_attn", params.flash_attn},
         {"json_output", params.json_output},
         {"print_tokens", params.print_tokens},
+        {"replay", params.replay},
+        {"replay_file", params.replay_file},
         {"language", params.language},
         {"model", params.model},
         {"fname_out", params.fname_out}
@@ -244,6 +248,10 @@ bool whisper_params_parse(int argc, char** argv, whisper_params& params) {
         else if (arg == "-fa"   || arg == "--flash-attn")    { params.flash_attn    = true; }
         else if (arg == "-j"    || arg == "--json")          { params.json_output   = true; }
         else if (arg == "-pt"   || arg == "--print-tokens")  { params.print_tokens  = true; }
+        else if (arg == "-r"    || arg == "--replay")        {
+            params.replay      = true;
+            params.replay_file = argv[++i];
+        }
         else {
             fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
             whisper_print_usage(argc, argv, params);
@@ -283,6 +291,7 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
     fprintf(stderr, "  -fa,      --flash-attn    [%-7s] flash attention during inference\n",               params.flash_attn ? "true" : "false");
     fprintf(stderr, "  -j,       --json          [%-7s] output in JSON format\n",                          params.json_output ? "true" : "false");
     fprintf(stderr, "  -pt,      --print-tokens  [%-7s] include tokens in output\n",                       params.print_tokens ? "true" : "false");
+    fprintf(stderr, "  -r FILE,  --replay FILE   [%-7s] replay transcriptions from JSONL file\n",          params.replay ? params.replay_file.c_str() : "false");
     fprintf(stderr, "\n");
 }
 
@@ -380,6 +389,85 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
     // Output the JSON
     logger.log_json(j);
+}
+
+// Function to replay transcriptions from JSONL file
+bool replay_transcriptions(const std::string& replay_file, Logger& logger) {
+std::ifstream file(replay_file);
+if (!file.is_open()) {
+    logger.error("Failed to open replay file: " + replay_file);
+    return false;
+}
+
+// Track the earliest timestamp for time adjustment
+int64_t first_timestamp = -1;
+int64_t replay_start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+// Store all transcriptions with timestamps for ordered replay
+struct ReplayItem {
+    json data;
+    int64_t timestamp;
+    int iter;
+};
+std::vector<ReplayItem> replay_items;
+
+// Read and parse the JSONL file
+std::string line;
+while (std::getline(file, line)) {
+    try {
+        json entry = json::parse(line);
+
+        // Only process prediction/transcription entries with iter fields
+        if (entry.contains("type") &&
+            (entry["type"] == "prediction" || entry["type"] == "transcription") &&
+            entry.contains("iter") &&
+            entry.contains("iter_start_ms")) {
+
+            int64_t timestamp = entry["iter_start_ms"];
+            int iter = entry["iter"];
+
+            // Track the earliest timestamp
+            if (first_timestamp < 0 || timestamp < first_timestamp) {
+                first_timestamp = timestamp;
+            }
+
+            replay_items.push_back({entry, timestamp, iter});
+        }
+    } catch (const std::exception& e) {
+        logger.warning("Error parsing JSONL line: " + std::string(e.what()));
+        // Continue with next line
+    }
+}
+
+// Sort items by timestamp
+std::sort(replay_items.begin(), replay_items.end(),
+          [](const ReplayItem& a, const ReplayItem& b) {
+              return a.timestamp < b.timestamp;
+          });
+
+logger.log("Replaying " + std::to_string(replay_items.size()) + " transcription items...");
+
+// Replay the transcriptions with timing based on original intervals
+for (const auto& item : replay_items) {
+    // Calculate relative delay and add to replay start time
+    int64_t relative_delay = item.timestamp - first_timestamp;
+    int64_t target_time = replay_start_time + relative_delay;
+
+    // Current time
+    int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+    // Sleep until the target time
+    if (current_time < target_time) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(target_time - current_time));
+    }
+
+    // Output the transcription
+    logger.log_json(item.data);
+}
+
+return true;
 }
 
 // Generate output for devices and model
@@ -586,6 +674,23 @@ int main(int argc, char** argv) {
     // Initialize the logger
     Logger logger(params);
 
+    // Check if we're in replay mode
+    if (params.replay) {
+        // Force JSON output in replay mode
+        params.json_output = true;
+
+        logger.log("Starting replay from file: " + params.replay_file);
+
+        // Replay transcriptions from file and exit
+        if (!replay_transcriptions(params.replay_file, logger)) {
+            return 1;
+        }
+
+        logger.log("Replay completed successfully");
+        return 0;
+    }
+
+    // Normal transcription mode - continue with initialization
     const int n_samples_step = (1e-3*params.step_ms  )*WHISPER_SAMPLE_RATE;
     const int n_samples_len  = (1e-3*params.length_ms)*WHISPER_SAMPLE_RATE;
     const int n_samples_keep = (1e-3*params.keep_ms  )*WHISPER_SAMPLE_RATE;
