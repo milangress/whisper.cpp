@@ -70,9 +70,9 @@ private:
     std::ofstream jsonl_out;
 
 public:
-    Logger(const whisper_params& params) : 
+    Logger(const whisper_params& params) :
         json_mode(params.json_output) {
-        
+
         // Open regular output file if specified
         if (!params.fname_out.empty()) {
             file_out.open(params.fname_out);
@@ -106,7 +106,7 @@ public:
         } else {
             printf("%s%s", text.c_str(), new_line ? "\n" : "");
             fflush(stdout);
-            
+
             if (file_out.is_open()) {
                 file_out << text << (new_line ? "\n" : "");
                 file_out.flush();
@@ -124,7 +124,7 @@ public:
             log_json(j);
         } else {
             fprintf(stderr, "Error: %s\n", text.c_str());
-            
+
             if (file_out.is_open()) {
                 file_out << "Error: " << text << std::endl;
             }
@@ -141,7 +141,7 @@ public:
             log_json(j);
         } else {
             fprintf(stderr, "WARNING: %s\n", text.c_str());
-            
+
             if (file_out.is_open()) {
                 file_out << "WARNING: " << text << std::endl;
             }
@@ -151,15 +151,20 @@ public:
     // Log JSON directly
     void log_json(const json& j) {
         std::cout << j.dump(2) << std::endl << std::flush;
-        
+
         if (file_out.is_open()) {
             file_out << j.dump(2) << std::endl;
         }
-        
+
         // Also write to JSON lines file if needed (one line per object, no indentation)
         if (jsonl_out.is_open()) {
             jsonl_out << j.dump() << std::endl;
         }
+    }
+
+    // Check if we're in JSON output mode
+    bool is_json_mode() const {
+        return json_mode;
     }
 };
 
@@ -260,7 +265,7 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
 }
 
 // Function to output JSON for predictions and transcriptions
-void generate_transcription_json(bool is_prediction, int iter, struct whisper_context* ctx, 
+void generate_transcription_json(bool is_prediction, int iter, struct whisper_context* ctx,
                                Logger& logger, const int64_t start_time_ms = 0) {
     // Create segments array
     json segments = json::array();
@@ -337,8 +342,8 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
 // Generate output for devices and model
 void output_system_info(whisper_context* ctx, Logger& logger) {
-    if (!logger.json_mode) return;
-    
+    if (!logger.is_json_mode()) return;
+
     // List audio devices
     json devices = json::array();
     int device_count = SDL_GetNumAudioDevices(SDL_TRUE); // Get capture (input) devices
@@ -379,10 +384,10 @@ void output_system_info(whisper_context* ctx, Logger& logger) {
 }
 
 // Output processing information
-void output_processing_info(const whisper_params& params, Logger& logger, 
-                          bool use_vad, int n_samples_step, int n_samples_len, 
+void output_processing_info(const whisper_params& params, Logger& logger,
+                          bool use_vad, int n_samples_step, int n_samples_len,
                           int n_samples_keep, int n_new_line) {
-    if (logger.json_mode) {
+    if (logger.is_json_mode()) {
         // Create processing metadata
         json j = {
             {"type", "processing-meta"},
@@ -430,9 +435,9 @@ void output_processing_info(const whisper_params& params, Logger& logger,
 }
 
 // Process audio and generate transcript
-bool process_audio(whisper_context* ctx, const whisper_params& params, 
-                  const std::vector<float>& pcmf32, Logger& logger, 
-                  int n_iter, bool use_vad, bool is_prediction, 
+bool process_audio(whisper_context* ctx, const whisper_params& params,
+                  const std::vector<float>& pcmf32, Logger& logger,
+                  int n_iter, bool use_vad, bool is_prediction,
                   const int64_t t_start_ms, std::vector<whisper_token>& prompt_tokens) {
     whisper_full_params wparams = whisper_full_default_params(
         params.beam_size > 1 ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY);
@@ -459,10 +464,10 @@ bool process_audio(whisper_context* ctx, const whisper_params& params,
     }
 
     // Output results
-    if (logger.json_mode) {
+    if (logger.is_json_mode()) {
         // Calculate elapsed time in milliseconds since beginning of audio capture
         const int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - 
+            std::chrono::high_resolution_clock::now() -
             std::chrono::high_resolution_clock::time_point(std::chrono::milliseconds(t_start_ms))
         ).count();
 
@@ -515,7 +520,7 @@ bool process_audio(whisper_context* ctx, const whisper_params& params,
 }
 
 // Handle audio buffer overflow
-void handle_overflow(Logger& logger, std::vector<float>& audio) {
+void handle_overflow(Logger& logger, audio_async& audio) {
     logger.warning("Cannot process audio fast enough, dropping audio...");
     audio.clear();
 }
@@ -630,7 +635,7 @@ int main(int argc, char** argv) {
             while (true) {
                 is_running = sdl_poll_events();
                 if (!is_running) break;
-                
+
                 audio.get(params.step_ms, pcmf32_new);
 
                 // Handle overflow
@@ -650,7 +655,7 @@ int main(int argc, char** argv) {
             const int n_samples_new = pcmf32_new.size();
 
             // Take up to params.length_ms audio from previous iteration
-            const int n_samples_take = std::min((int)pcmf32_old.size(), 
+            const int n_samples_take = std::min((int)pcmf32_old.size(),
                                              std::max(0, n_samples_keep + n_samples_len - n_samples_new));
 
             // Prepare the audio buffer
@@ -694,7 +699,7 @@ int main(int argc, char** argv) {
         const int64_t t_start_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             t_last - t_start).count();
 
-        if (!process_audio(ctx, params, pcmf32, logger, n_iter, use_vad, 
+        if (!process_audio(ctx, params, pcmf32, logger, n_iter, use_vad,
                           is_prediction, t_start_ms, prompt_tokens)) {
             break;
         }
@@ -703,7 +708,7 @@ int main(int argc, char** argv) {
 
         // Handle end of audio segment (new line)
         if (!use_vad && (n_iter % n_new_line) == 0) {
-            if (!logger.json_mode) {
+            if (!logger.is_json_mode()) {
                 printf("\n");
             }
 
@@ -731,7 +736,7 @@ int main(int argc, char** argv) {
     if (params.save_audio) {
         wavWriter.close();
     }
-    
+
     whisper_print_timings(ctx);
     whisper_free(ctx);
 
