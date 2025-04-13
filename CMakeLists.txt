@@ -3,6 +3,9 @@ project("whisper.cpp" C CXX)
 project("whisper.cpp" VERSION 1.7.5)
 include(CheckIncludeFileCXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+
 set(SOVERSION 1)
 
 #set(CMAKE_WARN_DEPRECATED YES)
