@@ -9,7 +9,7 @@ This guide explains how to integrate the whisper-stream tool with an Electron ap
 
 ```bash
 # From your Electron project root
-git submodule add https://github.com/ggerganov/whisper.cpp.git vendor/whisper.cpp
+git submodule add -b milan/stream git@github.com:milangress/whisper.cpp.git vendor/whisper.cpp
 git submodule update --init --recursive
 ```
 
@@ -58,11 +58,11 @@ const os = require('os');
 // Paths
 const ROOT_DIR = path.resolve(__dirname, '../..');
 const WHISPER_DIR = path.join(ROOT_DIR, 'vendor', 'whisper.cpp');
-const BIN_DIR = path.join(ROOT_DIR, 'bin');
+const LIB_DIR = path.join(ROOT_DIR, 'resources', 'lib');
 
-// Create bin directory if it doesn't exist
-if (!fs.existsSync(BIN_DIR)) {
-  fs.mkdirSync(BIN_DIR, { recursive: true });
+// Create resources/lib directory if it doesn't exist
+if (!fs.existsSync(LIB_DIR)) {
+  fs.mkdirSync(LIB_DIR, { recursive: true });
 }
 
 // Platform-specific configurations
@@ -70,6 +70,13 @@ const platform = os.platform();
 console.log(`Building whisper-stream for ${platform}...`);
 
 try {
+  // Update git submodules if needed
+  console.log('Updating git submodules...');
+  execSync('git submodule update --init --recursive', { 
+    stdio: 'inherit',
+    cwd: ROOT_DIR
+  });
+
   // Change to whisper.cpp directory
   process.chdir(WHISPER_DIR);
 
@@ -84,38 +91,43 @@ try {
     execSync('cmake -B build -DWHISPER_SDL2=ON', { stdio: 'inherit' });
     execSync('cmake --build build --config Release', { stdio: 'inherit' });
     
-    // Copy binary to the bin directory
+    // Copy binary to the resources/lib directory
     fs.copyFileSync(
       path.join(WHISPER_DIR, 'build', 'bin', 'whisper-stream'),
-      path.join(BIN_DIR, 'whisper-stream')
+      path.join(LIB_DIR, 'whisper-stream')
     );
+    
+    // Make executable
+    execSync(`chmod +x "${path.join(LIB_DIR, 'whisper-stream')}"`, { stdio: 'inherit' });
   } 
   else if (platform === 'linux') {  // Linux
     execSync('cmake -B build -DWHISPER_SDL2=ON', { stdio: 'inherit' });
     execSync('cmake --build build --config Release', { stdio: 'inherit' });
     
-    // Copy binary to the bin directory
+    // Copy binary to the resources/lib directory
     fs.copyFileSync(
       path.join(WHISPER_DIR, 'build', 'bin', 'whisper-stream'),
-      path.join(BIN_DIR, 'whisper-stream')
+      path.join(LIB_DIR, 'whisper-stream')
     );
+    
+    // Make executable
+    execSync(`chmod +x "${path.join(LIB_DIR, 'whisper-stream')}"`, { stdio: 'inherit' });
   } 
   else if (platform === 'win32') {  // Windows
     execSync('cmake -B build -DWHISPER_SDL2=ON', { stdio: 'inherit' });
     execSync('cmake --build build --config Release', { stdio: 'inherit' });
     
-    // Copy binary to the bin directory
+    // Copy binary to the resources/lib directory
     fs.copyFileSync(
       path.join(WHISPER_DIR, 'build', 'bin', 'Release', 'whisper-stream.exe'),
-      path.join(BIN_DIR, 'whisper-stream.exe')
+      path.join(LIB_DIR, 'whisper-stream.exe')
     );
     
     // Copy SDL2.dll if needed
-    // This path might vary based on your SDL2 installation
     try {
       const sdlDllPath = path.join(WHISPER_DIR, 'build', 'bin', 'Release', 'SDL2.dll');
       if (fs.existsSync(sdlDllPath)) {
-        fs.copyFileSync(sdlDllPath, path.join(BIN_DIR, 'SDL2.dll'));
+        fs.copyFileSync(sdlDllPath, path.join(LIB_DIR, 'SDL2.dll'));
       }
     } catch (err) {
       console.warn('SDL2.dll not found. You may need to copy it manually.');
@@ -123,12 +135,11 @@ try {
   }
 
   console.log('Build completed successfully!');
-  console.log(`Binary located at: ${path.join(BIN_DIR, platform === 'win32' ? 'whisper-stream.exe' : 'whisper-stream')}`);
+  console.log(`Binary located at: ${path.join(LIB_DIR, platform === 'win32' ? 'whisper-stream.exe' : 'whisper-stream')}`);
 } catch (error) {
   console.error('Build failed:', error);
   process.exit(1);
-}
-```
+}```
 
 ### NPM Scripts Integration
 
@@ -138,7 +149,8 @@ Add the following to your Electron app's `package.json`:
 {
   "scripts": {
     "build:whisper": "node scripts/whisper-build/build.js",
-    "postinstall": "npm run build:whisper"
+    "download:models": "node scripts/whisper-build/download-models.js",
+    "postinstall": "npm run build:whisper && npm run download:models"
   }
 }
 ```
@@ -156,7 +168,7 @@ const fs = require('fs');
 
 const ROOT_DIR = path.resolve(__dirname, '../..');
 const WHISPER_DIR = path.join(ROOT_DIR, 'vendor', 'whisper.cpp');
-const MODELS_DIR = path.join(ROOT_DIR, 'models');
+const MODELS_DIR = path.join(ROOT_DIR, 'resources', 'models');
 
 // Create models directory if it doesn't exist
 if (!fs.existsSync(MODELS_DIR)) {
@@ -165,19 +177,35 @@ if (!fs.existsSync(MODELS_DIR)) {
 
 // Models to download (add more as needed)
 const models = [
-  'ggml-base.en.bin',
+  'ggml-small.en-q5_1.bin',
   // Add other models as needed
 ];
 
 console.log('Downloading whisper models...');
 
 try {
+  // Update git submodules if needed
+  console.log('Updating git submodules...');
+  execSync('git submodule update --init --recursive', { 
+    stdio: 'inherit',
+    cwd: ROOT_DIR
+  });
+  
   process.chdir(WHISPER_DIR);
   
   models.forEach(model => {
     console.log(`Downloading ${model}...`);
+    // Parse model name to get the base name and quantization
+    const modelParts = model.replace('ggml-', '').split('-');
+    const modelName = modelParts[0];
+    const quantization = modelParts.length > 1 ? modelParts[1] : '';
+    
     // Use whisper.cpp's download script
-    execSync(`bash ./models/download-ggml-model.sh ${model.replace('ggml-', '')}`, { stdio: 'inherit' });
+    const downloadCmd = quantization 
+      ? `bash ./models/download-ggml-model.sh ${modelName} ${quantization}`
+      : `bash ./models/download-ggml-model.sh ${modelName}`;
+    
+    execSync(downloadCmd, { stdio: 'inherit' });
     
     // Copy to our models directory
     const sourcePath = path.join(WHISPER_DIR, 'models', model);
@@ -195,8 +223,7 @@ try {
 } catch (error) {
   console.error('Model download failed:', error);
   process.exit(1);
-}
-```
+}```
 
 Add to package.json:
 
@@ -218,8 +245,8 @@ const path = require('path');
 
 function startWhisperStream() {
   // Path to the whisper-stream binary relative to the app
-  const whisperPath = path.join(__dirname, 'bin', process.platform === 'win32' ? 'whisper-stream.exe' : 'whisper-stream');
-  const modelPath = path.join(__dirname, 'models', 'ggml-base.en.bin');
+  const whisperPath = path.join(__dirname, 'resources', 'lib', process.platform === 'win32' ? 'whisper-stream.exe' : 'whisper-stream');
+  const modelPath = path.join(__dirname, 'resources', 'models', 'ggml-small.en-q5_1.bin');
 
   // Make sure the file is executable on Unix systems
   if (process.platform !== 'win32') {
@@ -285,13 +312,13 @@ To include the whisper-stream binaries and models in your packaged Electron app,
   "build": {
     "extraFiles": [
       {
-        "from": "bin",
-        "to": "bin",
+        "from": "resources/lib",
+        "to": "resources/lib",
         "filter": ["**/*"]
       },
       {
-        "from": "models",
-        "to": "models",
+        "from": "resources/models",
+        "to": "resources/models",
         "filter": ["**/*"]
       }
     ]
