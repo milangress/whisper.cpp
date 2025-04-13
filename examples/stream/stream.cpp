@@ -393,81 +393,82 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
 // Function to replay transcriptions from JSONL file
 bool replay_transcriptions(const std::string& replay_file, Logger& logger) {
-std::ifstream file(replay_file);
-if (!file.is_open()) {
-    logger.error("Failed to open replay file: " + replay_file);
-    return false;
-}
-
-// Track the earliest timestamp for time adjustment
-int64_t first_timestamp = -1;
-int64_t replay_start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-    std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-
-// Store all transcriptions with timestamps for ordered replay
-struct ReplayItem {
-    json data;
-    int64_t timestamp;
-    int iter;
-};
-std::vector<ReplayItem> replay_items;
-
-// Read and parse the JSONL file
-std::string line;
-while (std::getline(file, line)) {
-    try {
-        json entry = json::parse(line);
-
-        // Only process prediction/transcription entries with iter fields
-        if (entry.contains("type") &&
-            (entry["type"] == "prediction" || entry["type"] == "transcription") &&
-            entry.contains("iter") &&
-            entry.contains("iter_start_ms")) {
-
-            int64_t timestamp = entry["iter_start_ms"];
-            int iter = entry["iter"];
-
-            // Track the earliest timestamp
-            if (first_timestamp < 0 || timestamp < first_timestamp) {
-                first_timestamp = timestamp;
-            }
-
-            replay_items.push_back({entry, timestamp, iter});
-        }
-    } catch (const std::exception& e) {
-        logger.warning("Error parsing JSONL line: " + std::string(e.what()));
-        // Continue with next line
+    std::ifstream file(replay_file);
+    if (!file.is_open()) {
+        logger.error("Failed to open replay file: " + replay_file);
+        return false;
     }
-}
 
-// Sort items by timestamp
-std::sort(replay_items.begin(), replay_items.end(),
-          [](const ReplayItem& a, const ReplayItem& b) {
-              return a.timestamp < b.timestamp;
-          });
+    // Store transcriptions in the order they appear (should match iter order)
+    std::vector<json> transcriptions;
 
-logger.log("Replaying " + std::to_string(replay_items.size()) + " transcription items...");
+    // Read and parse the JSONL file
+    std::string line;
+    while (std::getline(file, line)) {
+        try {
+            json entry = json::parse(line);
 
-// Replay the transcriptions with timing based on original intervals
-for (const auto& item : replay_items) {
-    // Calculate relative delay and add to replay start time
-    int64_t relative_delay = item.timestamp - first_timestamp;
-    int64_t target_time = replay_start_time + relative_delay;
+            // Only process prediction/transcription entries with iter fields
+            if (entry.contains("type") &&
+                (entry["type"] == "prediction" || entry["type"] == "transcription") &&
+                entry.contains("iter") &&
+                entry.contains("iter_start_ms")) {
 
-    // Current time
-    int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                transcriptions.push_back(entry);
+            }
+        } catch (const std::exception& e) {
+            logger.warning("Error parsing JSONL line: " + std::string(e.what()));
+            // Continue with next line
+        }
+    }
+
+    if (transcriptions.empty()) {
+        logger.warning("No transcription items found in replay file");
+        return false;
+    }
+
+    logger.log("Replaying " + std::to_string(transcriptions.size()) + " transcription items...");
+
+    // Determine the earliest timestamp to calculate relative delays
+    int64_t first_timestamp = transcriptions[0]["iter_start_ms"];
+    for (const auto& entry : transcriptions) {
+        if (entry["iter_start_ms"] < first_timestamp) {
+            first_timestamp = entry["iter_start_ms"];
+        }
+    }
+
+    // Start time of replay
+    int64_t replay_start_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 
-    // Sleep until the target time
-    if (current_time < target_time) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(target_time - current_time));
+    // Previous target time, used to handle out-of-order timestamps
+    int64_t prev_target_time = replay_start_time;
+
+    // Replay the transcriptions in the order they appear in the file
+    for (const auto& entry : transcriptions) {
+        int64_t timestamp = entry["iter_start_ms"];
+
+        // Calculate when this item should be shown
+        int64_t relative_delay = timestamp - first_timestamp;
+        int64_t target_time = replay_start_time + relative_delay;
+
+        // If target time is before previous, show immediately
+        // Otherwise sleep until the target time
+        if (target_time > prev_target_time) {
+            int64_t current_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
+            if (current_time < target_time) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(target_time - current_time));
+            }
+            prev_target_time = target_time;
+        }
+
+        // Output the transcription
+        logger.log_json(entry);
     }
 
-    // Output the transcription
-    logger.log_json(item.data);
-}
-
-return true;
+    return true;
 }
 
 // Generate output for devices and model
