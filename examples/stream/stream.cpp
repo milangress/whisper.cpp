@@ -518,19 +518,6 @@ int main(int argc, char ** argv) {
                     break;
                 }
                 
-                // Notify about captured audio chunk in JSON mode
-                if (params.json_output) {
-                    json j = {
-                        {"type", "state"},
-                        {"audio_captured", true},
-                        {"samples", pcmf32_new.size()},
-                        {"duration_ms", params.step_ms}
-                    };
-                    std::cout << j.dump(2) << std::endl << std::flush;
-                    if (fout.is_open()) {
-                        fout << j.dump(2) << std::endl << std::flush;
-                    }
-                }
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
