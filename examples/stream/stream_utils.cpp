@@ -321,7 +321,7 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
     // Create the main JSON object
     json j = {
-        {"type", is_prediction ? "prediction" : "transcription"},
+        {"type", is_prediction ? "prediction" : "segment_final"},
         {"iter", iter},
         {"iter_start_ms", iter_start_ms},
         {"segments", segments},

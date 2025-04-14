@@ -21,9 +21,9 @@ bool replay_transcriptions(const std::string& replay_file, Logger& logger) {
         try {
             json entry = json::parse(line);
 
-            // Only process prediction/transcription entries with iter fields
+            // Only process prediction/segment_final entries with iter fields
             if (entry.contains("type") &&
-                (entry["type"] == "prediction" || entry["type"] == "transcription") &&
+                (entry["type"] == "prediction" || entry["type"] == "segment_final") &&
                 entry.contains("iter") &&
                 entry.contains("iter_start_ms")) {
 
