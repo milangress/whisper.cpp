@@ -88,7 +88,6 @@ int main(int argc, char** argv) {
     
     // If get-audio-devices flag is set, exit after listing devices
     if (params.get_audio_devices) {
-        logger.log("Audio devices listed successfully");
         whisper_free(ctx);
         return 0;
     }
@@ -220,6 +219,10 @@ int main(int argc, char** argv) {
             break;
         }
 
+        // Force flush after each transcription to ensure immediate delivery
+        fflush(stdout);
+        fflush(stderr);
+        
         ++n_iter;
 
         // Handle end of audio segment (new line)

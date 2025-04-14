@@ -330,6 +330,9 @@ void generate_transcription_json(bool is_prediction, int iter, struct whisper_co
 
     // Output the JSON
     logger.log_json(j);
+    
+    // Additional explicit flush to ensure immediate delivery
+    fflush(stdout);
 }
 
 // Output parameters as standalone JSON (for backward compatibility)

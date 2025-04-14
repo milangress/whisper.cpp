@@ -47,12 +47,15 @@ void Logger::error(const std::string& text) {
         log_json(j);
     } else {
         fprintf(stderr, "Error: %s\n", text.c_str());
+        fflush(stderr);
 
         if (file_out.is_open()) {
             file_out << "Error: " << text << std::endl;
+            file_out.flush();
         }
     }
 }
+
 
 // Log warning message
 void Logger::warning(const std::string& text) {
@@ -64,16 +67,20 @@ void Logger::warning(const std::string& text) {
         log_json(j);
     } else {
         fprintf(stderr, "WARNING: %s\n", text.c_str());
+        fflush(stderr);
 
         if (file_out.is_open()) {
             file_out << "WARNING: " << text << std::endl;
+            file_out.flush();
         }
     }
 }
 
+
 // Log JSON directly
 void Logger::log_json(const json& j) {
     std::cout << j.dump(2) << std::endl << std::flush;
+    fflush(stdout);
 
     // Write to file if open (always as JSONL format)
     if (file_out.is_open()) {

@@ -79,6 +79,9 @@ bool replay_transcriptions(const std::string& replay_file, Logger& logger) {
 
         // Output the transcription
         logger.log_json(entry);
+        
+        // Additional flush to ensure immediate delivery
+        fflush(stdout);
     }
 
     return true;
