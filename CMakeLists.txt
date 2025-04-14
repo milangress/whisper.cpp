@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.5) # for add_link_options and implicit target directories.
 project("whisper.cpp" C CXX)
 project("whisper.cpp" VERSION 1.7.5)
+set(PLACE_MILAN_WHISPER_VERSION "2.0.5")
 include(CheckIncludeFileCXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

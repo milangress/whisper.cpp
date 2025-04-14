@@ -66,6 +66,7 @@ bool whisper_params_parse(int argc, char** argv, whisper_params& params) {
             whisper_print_usage(argc, argv, params);
             exit(0);
         }
+        else if (arg == "--version")        { params.show_version = true; }
         else if (arg == "-t"    || arg == "--threads")       { params.n_threads     = std::stoi(argv[++i]); }
         else if (                  arg == "--step")          { params.step_ms       = std::stoi(argv[++i]); }
         else if (                  arg == "--length")        { params.length_ms     = std::stoi(argv[++i]); }
@@ -107,6 +108,8 @@ bool whisper_params_parse(int argc, char** argv, whisper_params& params) {
 void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params) {
     fprintf(stderr, "\n");
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
+    fprintf(stderr, "       %s --version         show version information and exit\n", argv[0]);
+    fprintf(stderr, "  --version             show version information and exit\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
     fprintf(stderr, "  -h,       --help          [default] show this help message and exit\n");
@@ -135,6 +138,7 @@ void whisper_print_usage(int /*argc*/, char** argv, const whisper_params& params
     fprintf(stderr, "  -pt,      --print-tokens  [%-7s] include tokens in output\n",                       params.print_tokens ? "true" : "false");
     fprintf(stderr, "  -r FILE,  --replay FILE   [%-7s] replay transcriptions from JSONL file\n",          params.replay ? params.replay_file.c_str() : "false");
     fprintf(stderr, "  -gad,     --get-audio-devices [%-7s] just list audio devices and exit\n",           params.get_audio_devices ? "true" : "false");
+    fprintf(stderr, "            --version       [%-7s] show version information and exit\n",          params.show_version ? "true" : "false");
     fprintf(stderr, "\n");
 }
 

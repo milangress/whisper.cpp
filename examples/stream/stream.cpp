@@ -13,6 +13,7 @@
 #include "stream_utils.h"
 
 #include <chrono>
+#include <iostream>
 #include <cstdio>
 #include <string>
 #include <thread>
@@ -23,6 +24,31 @@ int main(int argc, char** argv) {
 
     if (!whisper_params_parse(argc, argv, params)) {
         return 1;
+    }
+    // Check if the version flag is set
+    if (params.show_version) {
+        // Print version information using the macros defined in CMakeLists.txt
+        // Need to stringify the macros
+        #define STRINGIFY(x) #x
+        #define TOSTRING(x) STRINGIFY(x)
+        // Ensure macros are defined before using them
+        #ifdef WHISPER_CPP_VERSION
+          std::cout << "whisper.cpp " << TOSTRING(WHISPER_CPP_VERSION) << std::endl;
+        #else
+          // Provide a fallback or error if the macro isn't defined
+          std::cerr << "Warning: WHISPER_CPP_VERSION macro not defined during compilation." << std::endl;
+          std::cout << "whisper.cpp version unknown" << std::endl;
+        #endif
+        #ifdef PLACE_MILAN_WHISPER_VERSION
+          std::cout << "place.milan.whisper " << TOSTRING(PLACE_MILAN_WHISPER_VERSION) << std::endl;
+        #else
+          // Provide a fallback or error if the macro isn't defined
+          std::cerr << "Warning: PLACE_MILAN_WHISPER_VERSION macro not defined during compilation." << std::endl;
+          std::cout << "place.milan.whisper version unknown" << std::endl;
+        #endif
+        #undef TOSTRING
+        #undef STRINGIFY
+        return 0; // Exit after printing version
     }
 
     // Initialize the logger

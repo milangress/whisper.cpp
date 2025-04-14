@@ -47,6 +47,7 @@ struct whisper_params {
     bool get_audio_devices = false; // just list audio devices and exit
     std::string replay_file;  // path to JSONL file for replay
 
+    bool show_version  = false; // show version info and exit
     std::string language  = "en";
     std::string model     = "models/ggml-base.en.bin";
     std::string fname_out;
