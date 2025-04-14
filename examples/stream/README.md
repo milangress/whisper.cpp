@@ -8,6 +8,7 @@ More info is available in [issue #10](https://github.com/ggerganov/whisper.cpp/i
 ./build/bin/whisper-stream -m ./models/ggml-base.en.bin -t 8 --step 500 --length 5000
 ```
 
+
 https://user-images.githubusercontent.com/1991296/194935793-76afede7-cfa8-48d8-a80f-28ba83be7d09.mp4
 
 ## Sliding window mode with VAD
