@@ -36,7 +36,7 @@ if [ -z "$STORJ_ACCESS" ]; then
 fi
 
 # Set up variables
-STORJ_BUCKET="sj://models.milan.place/whisper-ccp/metal"
+STORJ_BUCKET="sj://models.milan.place/whisper-cpp/metal"
 MODEL_NAME="$1"
 WD=$(dirname "$0")
 cd "$WD/../" || exit
@@ -75,7 +75,7 @@ generate_and_upload_model() {
         "${target_dir}/ggml-${model_name}-encoder.mlmodelc.zip"
 
     # Create and upload download link file
-    echo "https://models.milan.place/whisper-ccp/metal${is_quantized:+/quantized}/ggml-${model_name}-encoder.mlmodelc.zip" > "models/${model_name}.txt"
+    echo "https://models.milan.place/whisper-cpp/metal${is_quantized:+/quantized}/ggml-${model_name}-encoder.mlmodelc.zip" > "models/${model_name}.txt"
     uplink cp --access "$STORJ_ACCESS" \
         "models/${model_name}.txt" \
         "${target_dir}/${model_name}.txt"
