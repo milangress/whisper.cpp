@@ -91,6 +91,48 @@ int main(int argc, char** argv) {
     }
 
     audio.resume();
+    
+    // If get-audio-devices flag is set, just list devices and exit without loading the model
+    if (params.get_audio_devices) {
+        // Create a minimal JSON structure with just the devices info
+        if (logger.is_json_mode()) {
+            // List audio devices
+            json devices = json::array();
+            int device_count = SDL_GetNumAudioDevices(SDL_TRUE); // Get capture (input) devices
+
+            for (int i = 0; i < device_count; ++i) {
+                const char* device_name = SDL_GetAudioDeviceName(i, SDL_TRUE);
+                devices.push_back({
+                    {"id", i},
+                    {"name", device_name ? device_name : "Unknown Device " + std::to_string(i)}
+                });
+            }
+
+            // Add default device
+            devices.push_back({
+                {"id", -1},
+                {"name", "Default Device"}
+            });
+
+            json j = {
+                {"type", "audio_devices"},
+                {"devices", devices}
+            };
+
+            // Output to logger
+            logger.log_json(j);
+        } else {
+            // Print devices in plain text format
+            printf("Available audio capture devices:\n");
+            int device_count = SDL_GetNumAudioDevices(SDL_TRUE);
+            for (int i = 0; i < device_count; ++i) {
+                const char* device_name = SDL_GetAudioDeviceName(i, SDL_TRUE);
+                printf("  [%d] %s\n", i, device_name ? device_name : "Unknown Device");
+            }
+            printf("  [-1] Default Device\n");
+        }
+        return 0;
+    }
 
     // Initialize Whisper
     if (params.language != "auto" && whisper_lang_id(params.language.c_str()) == -1) {
@@ -111,12 +153,6 @@ int main(int argc, char** argv) {
 
     // Output system information (including params)
     output_system_info(ctx, logger, params);
-    
-    // If get-audio-devices flag is set, exit after listing devices
-    if (params.get_audio_devices) {
-        whisper_free(ctx);
-        return 0;
-    }
 
     // Check model compatibility
     if (!whisper_is_multilingual(ctx)) {

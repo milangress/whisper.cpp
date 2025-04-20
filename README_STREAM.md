@@ -361,6 +361,10 @@ cmake -B build -DWHISPER_SDL2=ON -DWHISPER_COREML=1
 export CPLUS_INCLUDE_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
 cmake --build build --config Release
 
+
+
+./build/bin/whisper-stream -m ./models/ggml-base.en.bin -t 8 --step 500 --length 5000
+
 # Linux
 cd vendor/whisper.cpp
 cmake -B build -DWHISPER_SDL2=ON
