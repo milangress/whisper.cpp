@@ -351,6 +351,7 @@ To include the whisper-stream binaries and models in your packaged Electron app,
 
 For manual building of whisper.cpp:
 
+(pyenv activate py311-whisper)
 generate coreml model with: `./models/generate-coreml-model.sh base.en`
 
 ```bash
