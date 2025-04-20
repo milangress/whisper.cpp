@@ -88,7 +88,7 @@ try {
       process.env.CPLUS_INCLUDE_PATH = cplusplusPath;
     }
     
-    execSync('cmake -B build -DWHISPER_SDL2=ON', { stdio: 'inherit' });
+    execSync('cmake -B build -DWHISPER_SDL2=ON -DWHISPER_COREML=1', { stdio: 'inherit' });
     execSync('cmake --build build --config Release', { stdio: 'inherit' });
     
     // Copy binary to the resources/lib directory
@@ -351,10 +351,12 @@ To include the whisper-stream binaries and models in your packaged Electron app,
 
 For manual building of whisper.cpp:
 
+generate coreml model with: `./models/generate-coreml-model.sh base.en`
+
 ```bash
 # macOS
 cd vendor/whisper.cpp
-cmake -B build -DWHISPER_SDL2=ON
+cmake -B build -DWHISPER_SDL2=ON -DWHISPER_COREML=1
 export CPLUS_INCLUDE_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
 cmake --build build --config Release
 
